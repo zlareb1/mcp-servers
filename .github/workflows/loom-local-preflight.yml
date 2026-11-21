@@ -1,0 +1,51 @@
+name: Loom local entry preflight
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact contribution commit
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Require an exact source commit
+        env:
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: '[[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]'
+      - name: Checkout exact contribution
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Verify source
+        env:
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: 'test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"'
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 20
+      - name: Install native dependencies
+        run: npm ci
+      - name: Validate all definitions
+        run: npm run validate:all
+      - name: Check conflicts
+        run: npm run check-conflicts
+      - name: Native changed-entry provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: npm run check-provenance -- servers/com.clickhouse-loom-local-http.json
+      - name: Native full test suite
+        run: npm test
+      - name: Source receipt
+        env:
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$REQUESTED_SHA"
+          git rev-parse HEAD
+          sha256sum servers/com.clickhouse-loom-local-http.json
